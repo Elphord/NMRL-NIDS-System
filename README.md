@@ -1,1 +1,6 @@
 # NMRL-NIDS-System
+
+This project focuses on developing a Network Anomaly Detection System (NIDS) using machine learning techniques to identify and mitigate potential security threats in network traffic. The system leverages three machine learning models i.e Autoencoder, K-means Clustering, and Isolation Forest to detect anomalies in real-time network packets. The models are trained on preprocessed packet data, which includes features such as packet size, protocol type, source and destination IP addresses, and TCP/UDP flags.
+The system is implemented as a Flask-based web application with a user-friendly dashboard that visualizes network traffic, detected anomalies, and alerts. It includes functionalities for model management, real-time monitoring, and email notifications for high-severity alerts. The performance of each model is evaluated using metrics such as accuracy, precision, recall, and F1-score, with an ensemble approach employed to improve detection reliability.
+The project demonstrates the practical application of machine learning in cybersecurity, providing a scalable and efficient solution for network intrusion detection. The system is designed to be modular, allowing for easy integration of additional models or features in the future.
+Keywords: Network Anomaly Detection, Machine Learning, Autoencoder, K-means, Isolation Forest, Cybersecurity.
