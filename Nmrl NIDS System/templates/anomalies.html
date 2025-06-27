@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NMRL NIDS - Anomalies</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.5.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .card {
+            margin-bottom: 20px;
+            transition: all 0.2s ease-in-out;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+        }
+        .table-responsive {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .active-link {
+            background-color: rgba(0,0,0,0.1);
+            font-weight: bold;
+        }
+        .score-bar {
+            height: 8px;
+            border-radius: 4px;
+            background: linear-gradient(to right, green, yellow 50%, red);
+        }
+        .score-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            position: relative;
+            top: -2px;
+        }
+        .anomaly-card {
+            border-left: 4px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .anomaly-card.high {
+            border-left-color: #dc3545;
+        }
+        .anomaly-card.medium {
+            border-left-color: #fd7e14;
+        }
+        .anomaly-card.low {
+            border-left-color: #20c997;
+        }
+    </style>
+</head>
+<body class="{{ theme_class }}">
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <nav id="sidebar" class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+                <div class="position-sticky pt-3">
+                    <ul class="nav flex-column">
+                        <li class="nav-item">
+                            <a href="{{ url_for('dashboard') }}" class="nav-link">    
+                                <i class="bi bi-speedometer2"></i> NMRL NIDS Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('traffic_monitor') }}">
+                                <i class="bi bi-graph-up"></i> Traffic Monitor
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active-link" href="{{ url_for('anomalies') }}">
+                                <i class="bi bi-exclamation-triangle"></i> Anomalies
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('alerts') }}">
+                                <i class="bi bi-bell"></i> Alerts
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('model_management') }}">
+                                <i class="bi bi-cpu"></i> Models
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('system_settings_page') }}">
+                                <i class="bi bi-gear"></i> Settings
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </nav>
+
+            <!-- Main content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2">Anomaly Detection</h1>
+                    <div class="btn-toolbar mb-2 mb-md-0">
+                        <div class="btn-group me-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshAnomalies()">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="exportBtn">
+                                <i class="bi bi-download"></i> Export
+                            </button>
+                        </div>
+                        <div class="dropdown">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                <i class="bi bi-funnel"></i> Filter
+                            </button>
+                            <div class="dropdown-menu dropdown-menu-end p-3" style="width: 300px;">
+                                <div class="mb-3">
+                                    <label for="severityFilter" class="form-label">Severity</label>
+                                    <select class="form-select" id="severityFilter">
+                                        <option value="all">All</option>
+                                        <option value="critical">Critical</option>
+                                        <option value="warning">Warning</option>
+                                        <option value="low">Low</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="typeFilter" class="form-label">Anomaly Type</label>
+                                    <select class="form-select" id="typeFilter">
+                                        <option value="all">All</option>
+                                        <option value="port_scan">Port Scan</option>
+                                        <option value="ddos">DDoS</option>
+                                        <option value="malware">Malware</option>
+                                        <option value="data_exfiltration">Data Exfiltration</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="timeRangeFilter" class="form-label">Time Range</label>
+                                    <select class="form-select" id="timeRangeFilter">
+                                        <option value="24h">Last 24 hours</option>
+                                        <option value="7d">Last 7 days</option>
+                                        <option value="30d">Last 30 days</option>
+                                        <option value="all">All time</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-primary w-100" onclick="applyAnomalyFilters()">Apply Filters</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <!-- Anomaly Statistics -->
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                Anomaly Summary
+                            </div>
+                            <div class="card-body">
+                                <canvas id="anomalyTypesChart" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                Anomaly Severity
+                            </div>
+                            <div class="card-body">
+                                <canvas id="anomalySeverityChart" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                Time Distribution
+                            </div>
+                            <div class="card-body">
+                                <canvas id="anomalyTimeChart" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <!-- Anomaly List -->
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span>Detected Anomalies</span>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="autoRefresh" checked>
+                                    <label class="form-check-label" for="autoRefresh">Auto-refresh</label>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th>Time</th>
+                                                <th>Type</th>
+                                                <th>Source IP</th>
+                                                <th>Score</th>
+                                                <th>Status</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="anomalies-table">
+                                            <!-- Table will be populated by JavaScript -->
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detailed Anomaly Analysis -->
+                <div class="row mt-4 mb-4">
+                    <div class="col-md-12">
+                        <div class="card">
+                            <div class="card-header">
+                                Detailed Analysis
+                            </div>
+                            <div class="card-body">
+                                <div class="row g-4" id="detailed-anomalies">
+                                    <!-- Will be populated by JavaScript -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Mock data for anomalies with IDs
+        const mockAnomalies = [
+            { id: 'a1', timestamp: '2025-04-24 10:15:23', anomaly_type: 'Port Scan', src_ip: '192.168.35.123', anomaly_score: 0.95, description: 'Rapid connection attempts to multiple ports from this IP address.' },
+            { id: 'a2', timestamp: '2025-04-24 09:42:10', anomaly_type: 'DDoS', src_ip: '192.168.12.45', anomaly_score: 0.84, description: 'Traffic surge detected with multiple SYN packets from various source IPs targeting server resources.' },
+            { id: 'a3', timestamp: '2025-04-24 08:35:45', anomaly_type: 'Malware', src_ip: '192.168.5.78', anomaly_score: 0.72, description: 'Suspicious beaconing pattern detected from internal host to external C&C server.' },
+            { id: 'a4', timestamp: '2025-04-24 08:15:12', anomaly_type: 'Data Exfiltration', src_ip: '192.168.8.96', anomaly_score: 0.65, description: 'Unusual data transfer volume detected from internal database server.' },
+            { id: 'a5', timestamp: '2025-04-24 07:55:38', anomaly_type: 'Port Scan', src_ip: '192.168.22.143', anomaly_score: 0.88, description: 'Multiple connection attempts to closed ports from this IP address.' },
+            { id: 'a6', timestamp: '2025-04-24 07:32:05', anomaly_type: 'DDoS', src_ip: '192.168.15.26', anomaly_score: 0.91, description: 'High volume of UDP packets detected from this source.' },
+            { id: 'a7', timestamp: '2025-04-24 07:12:47', anomaly_type: 'Malware', src_ip: '192.168.3.51', anomaly_score: 0.78, description: 'Suspicious process behavior detected on this host.' },
+            { id: 'a8', timestamp: '2025-04-24 06:43:19', anomaly_type: 'Data Exfiltration', src_ip: '192.168.9.172', anomaly_score: 0.63, description: 'Unusual outbound data transfer pattern detected.' }
+        ];
+
+        // Detailed anomaly data
+        const detailedAnomalies = [
+            {
+                title: 'Port Scan Attack',
+                detected: '10 minutes ago',
+                description: 'Rapid connection attempts to multiple ports from IP 192.168.35.123.',
+                confidence: '95%',
+                severity: 'high'
+            },
+            {
+                title: 'DDoS Attempt',
+                detected: '45 minutes ago',
+                description: 'Traffic surge detected with multiple SYN packets from various source IPs targeting server resources.',
+                confidence: '84%',
+                severity: 'medium'
+            },
+            {
+                title: 'Malware Communication',
+                detected: '2 hours ago',
+                description: 'Suspicious beaconing pattern detected from internal host to external C&C server.',
+                confidence: '72%',
+                severity: 'medium'
+            },
+            {
+                title: 'Data Exfiltration',
+                detected: '5 hours ago',
+                description: 'Unusual data transfer volume detected from internal database server.',
+                confidence: '65%',
+                severity: 'low'
+            }
+        ];
+
+        let anomalyTypesChart;
+        let anomalySeverityChart;
+        let anomalyTimeChart;
+        let refreshInterval;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize charts
+            initCharts();
+            
+            // Load initial data
+            loadAnomaliesTable();
+            loadDetailedAnomalies();
+            
+            // Set up auto-refresh if enabled
+            const autoRefreshCheckbox = document.getElementById('autoRefresh');
+            
+            function toggleAutoRefresh() {
+                if (autoRefreshCheckbox.checked) {
+                    refreshInterval = setInterval(refreshAnomalies, 10000);
+                } else {
+                    clearInterval(refreshInterval);
+                }
+            }
+            
+            autoRefreshCheckbox.addEventListener('change', toggleAutoRefresh);
+            toggleAutoRefresh();
+            
+            // Set up export button
+            document.getElementById('exportBtn').addEventListener('click', exportAnomalies);
+        });
+        
+        function initCharts() {
+            // Anomaly types chart
+            const typesCtx = document.getElementById('anomalyTypesChart').getContext('2d');
+            anomalyTypesChart = new Chart(typesCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Port Scan', 'DDoS', 'Malware', 'Data Exfiltration', 'Other'],
+                    datasets: [{
+                        data: [35, 25, 20, 15, 5],
+                        backgroundColor: [
+                            'rgba(255, 99, 132, 0.7)',
+                            'rgba(54, 162, 235, 0.7)',
+                            'rgba(255, 206, 86, 0.7)',
+                            'rgba(75, 192, 192, 0.7)',
+                            'rgba(153, 102, 255, 0.7)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        }
+                    }
+                }
+            });
+            
+            // Anomaly severity chart
+            const severityCtx = document.getElementById('anomalySeverityChart').getContext('2d');
+            anomalySeverityChart = new Chart(severityCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Critical', 'Warning', 'Low'],
+                    datasets: [{
+                        data: [15, 30, 55],
+                        backgroundColor: [
+                            'rgba(220, 53, 69, 0.7)',
+                            'rgba(255, 193, 7, 0.7)',
+                            'rgba(40, 167, 69, 0.7)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right'
+                        }
+                    }
+                }
+            });
+            
+            // Anomaly time distribution chart
+            const timeCtx = document.getElementById('anomalyTimeChart').getContext('2d');
+            anomalyTimeChart = new Chart(timeCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00'],
+                    datasets: [{
+                        label: 'Anomalies',
+                        data: [5, 3, 15, 22, 25, 10],
+                        backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function loadAnomaliesTable() {
+            const anomaliesTable = document.getElementById('anomalies-table');
+            
+            if (mockAnomalies.length === 0) {
+                anomaliesTable.innerHTML = '<tr><td colspan="6" class="text-center">No anomalies detected</td></tr>';
+            } else {
+                anomaliesTable.innerHTML = mockAnomalies.map(anomaly => `
+                    <tr class="${anomaly.anomaly_score > 0.9 ? 'table-danger' : anomaly.anomaly_score > 0.7 ? 'table-warning' : ''}">
+                        <td>${anomaly.timestamp}</td>
+                        <td>${anomaly.anomaly_type}</td>
+                        <td>${anomaly.src_ip}</td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <span class="me-2">${anomaly.anomaly_score.toFixed(2)}</span>
+                                <div class="flex-grow-1 position-relative">
+                                    <div class="score-bar"></div>
+                                    <div class="score-indicator bg-dark" style="left: calc(${anomaly.anomaly_score * 100}% - 6px);"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge ${anomaly.anomaly_score > 0.9 ? 'bg-danger' : anomaly.anomaly_score > 0.7 ? 'bg-warning text-dark' : 'bg-success'}">
+                                ${anomaly.anomaly_score > 0.9 ? 'Critical' : anomaly.anomaly_score > 0.7 ? 'Warning' : 'Low'}
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Details" onclick="investigateAnomaly('${anomaly.id}')">
+                                <i class="bi bi-info-circle"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary me-1" title="Investigate">
+                                <i class="bi bi-search"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Block" onclick="blockAnomaly('${anomaly.id}')">
+                                <i class="bi bi-shield-slash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        function loadDetailedAnomalies() {
+            const detailedContainer = document.getElementById('detailed-anomalies');
+            
+            detailedContainer.innerHTML = detailedAnomalies.map((anomaly, index) => `
+                <div class="col-md-6">
+                    <div class="card anomaly-card ${anomaly.severity}">
+                        <div class="card-body">
+                            <h5 class="card-title">
+                                ${anomaly.title}
+                                <span class="badge ${anomaly.severity === 'high' ? 'bg-danger' : anomaly.severity === 'medium' ? 'bg-warning text-dark' : 'bg-success'} float-end">
+                                    ${anomaly.severity === 'high' ? 'Critical' : anomaly.severity === 'medium' ? 'Warning' : 'Low'}
+                                </span>
+                            </h5>
+                            <h6 class="card-subtitle mb-2 text-muted">
+                                Detected ${anomaly.detected}
+                            </h6>
+                            <p class="card-text">
+                                ${anomaly.description}
+                            </p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="text-muted">Confidence: ${anomaly.confidence}</span>
+                                </div>
+                                <div>
+                                    <a href="#" class="btn btn-sm btn-primary">Investigate</a>
+                                    <a href="#" class="btn btn-sm btn-outline-danger">Block</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Refresh anomalies data with mock API
+        function refreshAnomalies() {
+            // In a real-world scenario, this would be an API call
+            // For our VS Code compatible version, we'll just use the mock data
+            
+            // Update table with mock data (with slight randomization)
+            const shuffledAnomalies = [...mockAnomalies].sort(() => 0.5 - Math.random());
+            
+            const anomaliesTable = document.getElementById('anomalies-table');
+            
+            if (shuffledAnomalies.length === 0) {
+                anomaliesTable.innerHTML = '<tr><td colspan="6" class="text-center">No anomalies detected</td></tr>';
+            } else {
+                anomaliesTable.innerHTML = shuffledAnomalies.map(anomaly => {
+                    // Slightly randomize scores for demo effect
+                    const randomizedScore = Math.min(1, Math.max(0, anomaly.anomaly_score + (Math.random() * 0.1 - 0.05)));
+                    
+                    return `
+                        <tr class="${randomizedScore > 0.9 ? 'table-danger' : randomizedScore > 0.7 ? 'table-warning' : ''}">
+                            <td>${anomaly.timestamp}</td>
+                            <td>${anomaly.anomaly_type}</td>
+                            <td>${anomaly.src_ip}</td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">${randomizedScore.toFixed(2)}</span>
+                                    <div class="flex-grow-1 position-relative">
+                                        <div class="score-bar"></div>
+                                        <div class="score-indicator bg-dark" style="left: calc(${randomizedScore * 100}% - 6px);"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge ${randomizedScore > 0.9 ? 'bg-danger' : randomizedScore > 0.7 ? 'bg-warning text-dark' : 'bg-success'}">
+                                    ${randomizedScore > 0.9 ? 'Critical' : randomizedScore > 0.7 ? 'Warning' : 'Low'}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-secondary me-1" title="Details" onclick="investigateAnomaly('${anomaly.id}')">
+                                    <i class="bi bi-info-circle"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary me-1" title="Investigate">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" title="Block" onclick="blockAnomaly('${anomaly.id}')">
+                                    <i class="bi bi-shield-slash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            // Update type counts from our mock data
+            const typeCount = {
+                'Port Scan': 0,
+                'DDoS': 0,
+                'Malware': 0,
+                'Data Exfiltration': 0,
+                'Other': 0
+            };
+            
+            shuffledAnomalies.forEach(anomaly => {
+                if (typeCount[anomaly.anomaly_type] !== undefined) {
+                    typeCount[anomaly.anomaly_type]++;
+                } else {
+                    typeCount['Other']++;
+                }
+            });
+            
+            // Update charts with new data
+            anomalyTypesChart.data.datasets[0].data = Object.values(typeCount);
+            anomalyTypesChart.update();
+            
+            // Update severity distribution
+            const severityCount = {
+                'Critical': 0,
+                'Warning': 0,
+                'Low': 0
+            };
+            
+            shuffledAnomalies.forEach(anomaly => {
+                if (anomaly.anomaly_score > 0.9) {
+                    severityCount['Critical']++;
+                } else if (anomaly.anomaly_score > 0.7) {
+                    severityCount['Warning']++;
+                } else {
+                    severityCount['Low']++;
+                }
+            });
+            
+            anomalySeverityChart.data.datasets[0].data = [
+                severityCount['Critical'],
+                severityCount['Warning'],
+                severityCount['Low']
+            ];
+            anomalySeverityChart.update();
+        }
+        
+        // Investigate anomaly
+        function investigateAnomaly(anomalyId) {
+            // Find the anomaly in the table
+            const anomaly = mockAnomalies.find(a => a.id === anomalyId);
+            
+            if (anomaly) {
+                // Show details in a modal
+                const modalHTML = `
+                    <div class="modal fade" id="anomalyDetailsModal" tabindex="-1" aria-labelledby="anomalyDetailsModalLabel" aria-hidden="true">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="anomalyDetailsModalLabel">
+                                        ${anomaly.anomaly_type} - ${anomaly.src_ip}
+                                    </h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <p><strong>Timestamp:</strong> ${anomaly.timestamp}</p>
+                                            <p><strong>Source IP:</strong> ${anomaly.src_ip}</p>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <p><strong>Score:</strong> 
+                                                <span class="badge ${anomaly.anomaly_score > 0.9 ? 'bg-danger' : anomaly.anomaly_score > 0.7 ? 'bg-warning text-dark' : 'bg-success'}">
+                                                    ${anomaly.anomaly_score.toFixed(2)}
+                                                </span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div class="mt-3">
+                                        <h6>Details:</h6>
+                                        <p>${anomaly.description || 'No additional details available'}</p>
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    <button type="button" class="btn btn-danger" onclick="blockAnomaly('${anomalyId}')">
+                                        <i class="bi bi-shield-slash"></i> Block
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add modal to DOM
+                const modalContainer = document.createElement('div');
+                modalContainer.innerHTML = modalHTML;
+                document.body.appendChild(modalContainer);
+                
+                // Show modal
+                const modal = new bootstrap.Modal(document.getElementById('anomalyDetailsModal'));
+                modal.show();
+                
+                // Remove modal when hidden
+                document.getElementById('anomalyDetailsModal').addEventListener('hidden.bs.modal', function() {
+                    modalContainer.remove();
+                });
+            }
+        }
+
+        // Block anomaly
+        function blockAnomaly(anomalyId) {
+            // In a real application, this would be an API call
+            // For demo purposes, we'll just show an alert
+            alert(`Blocking anomaly ${anomalyId} - This would trigger an API call in a real application`);
+            
+            // Hide the modal if it's open
+            const modal = bootstrap.Modal.getInstance(document.getElementById('anomalyDetailsModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Refresh the anomalies list
+            refreshAnomalies();
+        }
+
+        // Filter anomalies
+        function applyAnomalyFilters() {
+            const severity = document.getElementById('severityFilter').value;
+            const anomalyType = document.getElementById('typeFilter').value;
+            const timeRange = document.getElementById('timeRangeFilter').value;
+            
+            // In a real application, this would be an API call
+            // For demo purposes, we'll filter the mock data
+            
+            let filteredAnomalies = [...mockAnomalies];
+            
+            // Apply severity filter
+            if (severity !== 'all') {
+                filteredAnomalies = filteredAnomalies.filter(anomaly => {
+                    if (severity === 'critical') return anomaly.anomaly_score > 0.9;
+                    if (severity === 'warning') return anomaly.anomaly_score > 0.7 && anomaly.anomaly_score <= 0.9;
+                    if (severity === 'low') return anomaly.anomaly_score <= 0.7;
+                    return true;
+                });
+            }
+            
+            // Apply type filter
+            if (anomalyType !== 'all') {
+                const typeMap = {
+                    'port_scan': 'Port Scan',
+                    'ddos': 'DDoS',
+                    'malware': 'Malware',
+                    'data_exfiltration': 'Data Exfiltration'
+                };
+                
+                const typeToFilter = typeMap[anomalyType];
+                filteredAnomalies = filteredAnomalies.filter(anomaly => anomaly.anomaly_type === typeToFilter);
+            }
+            
+            // Apply time range filter (mock implementation)
+            if (timeRange !== 'all') {
+                // In a real app, we'd filter by actual timestamps
+                // For demo, we'll just take a subset
+                filteredAnomalies = filteredAnomalies.slice(0, Math.floor(filteredAnomalies.length * 0.7));
+            }
+            
+            // Update the table with filtered results
+            const anomaliesTable = document.getElementById('anomalies-table');
+            
+            if (filteredAnomalies.length === 0) {
+                anomaliesTable.innerHTML = '<tr><td colspan="6" class="text-center">No anomalies found matching your criteria</td></tr>';
+            } else {
+                anomaliesTable.innerHTML = filteredAnomalies.map(anomaly => `
+                    <tr class="${anomaly.anomaly_score > 0.9 ? 'table-danger' : anomaly.anomaly_score > 0.7 ? 'table-warning' : ''}">
+                        <td>${anomaly.timestamp}</td>
+                        <td>${anomaly.anomaly_type}</td>
+                        <td>${anomaly.src_ip}</td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <span class="me-2">${anomaly.anomaly_score.toFixed(2)}</span>
+                                <div class="flex-grow-1 position-relative">
+                                    <div class="score-bar"></div>
+                                    <div class="score-indicator bg-dark" style="left: calc(${anomaly.anomaly_score * 100}% - 6px);"></div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge ${anomaly.anomaly_score > 0.9 ? 'bg-danger' : anomaly.anomaly_score > 0.7 ? 'bg-warning text-dark' : 'bg-success'}">
+                                ${anomaly.anomaly_score > 0.9 ? 'Critical' : anomaly.anomaly_score > 0.7 ? 'Warning' : 'Low'}
+                            </span>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary me-1" title="Details" onclick="investigateAnomaly('${anomaly.id}')">
+                                <i class="bi bi-info-circle"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary me-1" title="Investigate">
+                                <i class="bi bi-search"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" title="Block" onclick="blockAnomaly('${anomaly.id}')">
+                                <i class="bi bi-shield-slash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        // Export functionality
+        function exportAnomalies() {
+            // Get current filter values
+            const severity = document.getElementById('severityFilter').value;
+            const anomalyType = document.getElementById('typeFilter').value;
+            const timeRange = document.getElementById('timeRangeFilter').value;
+            
+            // Filter anomalies based on current filters (using the same logic as applyAnomalyFilters)
+            let filteredAnomalies = [...mockAnomalies];
+            
+            if (severity !== 'all') {
+                filteredAnomalies = filteredAnomalies.filter(anomaly => {
+                    if (severity === 'critical') return anomaly.anomaly_score > 0.9;
+                    if (severity === 'warning') return anomaly.anomaly_score > 0.7 && anomaly.anomaly_score <= 0.9;
+                    if (severity === 'low') return anomaly.anomaly_score <= 0.7;
+                    return true;
+                });
+            }
+            
+            if (anomalyType !== 'all') {
+                const typeMap = {
+                    'port_scan': 'Port Scan',
+                    'ddos': 'DDoS',
+                    'malware': 'Malware',
+                    'data_exfiltration': 'Data Exfiltration'
+                };
+                const typeToFilter = typeMap[anomalyType];
+                filteredAnomalies = filteredAnomalies.filter(anomaly => anomaly.anomaly_type === typeToFilter);
+            }
+            
+            if (timeRange !== 'all') {
+                filteredAnomalies = filteredAnomalies.slice(0, Math.floor(filteredAnomalies.length * 0.7));
+            }
+            
+            // Convert to CSV
+            let csv = 'Timestamp,Type,Source IP,Score,Severity\n';
+            filteredAnomalies.forEach(anomaly => {
+                const severity = anomaly.anomaly_score > 0.9 ? 'Critical' : anomaly.anomaly_score > 0.7 ? 'Warning' : 'Low';
+                csv += `"${anomaly.timestamp}","${anomaly.anomaly_type}","${anomaly.src_ip}",${anomaly.anomaly_score},"${severity}"\n`;
+            });
+            
+            // Create download link
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('hidden', '');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `anomalies_export_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
+    </script>
+</body>
+</html>
